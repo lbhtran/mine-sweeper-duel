@@ -62,6 +62,7 @@ function Cell({
   adjacentCounts,
   revealed,
   flagged,
+  opponentRevealed,
   explodedIndex,
   gameOver,
   canAct,
@@ -71,19 +72,20 @@ function Cell({
 }: CellProps) {
   const isMine = mines[index];
   const isRevealed = revealed[index];
+  const isOpponentRevealed = (opponentRevealed?.[index] ?? false) && !isRevealed;
   const isFlagged = flagged[index];
   const isExploded = explodedIndex === index;
   const count = adjacentCounts[index];
 
   const handleClick = () => {
     if (!canAct || !isMyBoard) return;
-    if (!isRevealed && !isFlagged) onReveal(index);
+    if (!isRevealed && !isFlagged && !isOpponentRevealed) onReveal(index);
   };
 
   const handleRightClick = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!canAct || !isMyBoard) return;
-    if (!isRevealed) onFlag(index);
+    if (!isRevealed && !isOpponentRevealed) onFlag(index);
   };
 
   // Determine display
@@ -107,6 +109,15 @@ function Cell({
           </span>
         ) : null;
     }
+  } else if (isOpponentRevealed) {
+    // Cell already claimed by the opponent — locked, not clickable
+    bg = "bg-zinc-600";
+    content =
+      !isMine && count > 0 ? (
+        <span className={`font-bold text-xs opacity-40 ${CELL_COLORS[count] ?? "text-zinc-300"}`}>
+          {count}
+        </span>
+      ) : null;
   } else if (isFlagged) {
     bg = "bg-zinc-700";
     content = "🚩";
@@ -120,7 +131,7 @@ function Cell({
       onClick={handleClick}
       onContextMenu={handleRightClick}
       className={`w-8 h-8 flex items-center justify-center text-sm rounded select-none transition-colors ${bg} ${
-        canAct && isMyBoard && !isRevealed ? "cursor-pointer" : "cursor-default"
+        canAct && isMyBoard && !isRevealed && !isOpponentRevealed ? "cursor-pointer" : "cursor-default"
       }`}
       aria-label={`Cell ${index}`}
     >
@@ -575,6 +586,11 @@ export default function GameClient({ code }: { code: string }) {
               adjacentCounts={adjacentCounts}
               revealed={myRevealed}
               flagged={myFlagged}
+              opponentRevealed={
+                match.mode === "H2H_TURN"
+                  ? ((oppState?.revealed as boolean[]) ?? undefined)
+                  : undefined
+              }
               explodedIndex={explodedIndex}
               gameOver={gameOver}
               canAct={canAct}

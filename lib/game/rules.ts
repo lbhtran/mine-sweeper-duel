@@ -9,23 +9,32 @@ import {
 /**
  * Evaluate H2H_TURN round outcome.
  *
- * Called at end of each round (after both players have taken their reveal).
+ * Called at end of each round (after both players have taken their reveal),
+ * or immediately when the board is collectively cleared or a player explodes.
  * Returns a GameResult.
+ *
+ * With cell locking enabled, the board is considered cleared when both players'
+ * reveals combined cover all non-mine cells.  The winner in that case is the
+ * player who personally revealed more safe cells (more progress).
  */
 export function evaluateH2HTurnRound(
   mines: boolean[],
   p1: PlayerState,
   p2: PlayerState
 ): GameResult {
-  const p1Cleared = isCleared(mines, p1.revealed);
-  const p2Cleared = isCleared(mines, p2.revealed);
+  // With cell locking, the board is cleared when both players together have
+  // revealed all non-mine cells.
+  const combinedRevealed = p1.revealed.map((r, i) => r || p2.revealed[i]);
+  const boardCleared = isCleared(mines, combinedRevealed);
 
-  // Both cleared → draw
-  if (p1Cleared && p2Cleared) return { outcome: "draw" };
-
-  // One cleared, the other hasn't (and neither exploded at the same time)
-  if (p1Cleared && !p1.exploded) return { outcome: "win", winner: 1 };
-  if (p2Cleared && !p2.exploded) return { outcome: "win", winner: 2 };
+  // Board fully cleared and neither exploded → winner by progress
+  if (boardCleared && !p1.exploded && !p2.exploded) {
+    const prog1 = countProgress(mines, p1.revealed);
+    const prog2 = countProgress(mines, p2.revealed);
+    if (prog1 > prog2) return { outcome: "win", winner: 1 };
+    if (prog2 > prog1) return { outcome: "win", winner: 2 };
+    return { outcome: "draw" };
+  }
 
   // Both exploded this round → tiebreakers
   if (p1.exploded && p2.exploded) {
@@ -48,7 +57,11 @@ export function evaluateH2HTurnRound(
   if (p1.exploded && !p2.exploded) return { outcome: "win", winner: 2 };
   if (p2.exploded && !p1.exploded) return { outcome: "win", winner: 1 };
 
-  // Neither exploded, nobody cleared yet → game continues
+  // Board cleared but one player exploded → survivor wins
+  if (boardCleared && p1.exploded) return { outcome: "win", winner: 2 };
+  if (boardCleared && p2.exploded) return { outcome: "win", winner: 1 };
+
+  // Neither exploded, board not yet fully cleared → game continues
   return { outcome: "in_progress" };
 }
 
