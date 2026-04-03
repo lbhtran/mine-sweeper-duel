@@ -93,20 +93,11 @@ export function evaluateAsymResult(
   if (p1Cleared && !p1.exploded) return { outcome: "win", winner: 1 };
   if (p2Cleared && !p2.exploded) return { outcome: "win", winner: 2 };
 
-  // Both exploded
+  // Both exploded — more safe revealed wins (survived more rounds)
   if (p1.exploded && p2.exploded) {
-    // Identified mines = correctly flagged opponent mines
-    const id1 = countCorrectFlags(p2Mines, p1.flagged);
-    const id2 = countCorrectFlags(p1Mines, p2.flagged);
-    if (id1 !== id2) return { outcome: "win", winner: id1 > id2 ? 1 : 2 };
-
-    // Tiebreak: time-to-explosion
-    if (p1.exploded_at && p2.exploded_at) {
-      const t1 = new Date(p1.exploded_at).getTime();
-      const t2 = new Date(p2.exploded_at).getTime();
-      if (t1 < t2) return { outcome: "win", winner: 1 };
-      if (t2 < t1) return { outcome: "win", winner: 2 };
-    }
+    const prog1 = countProgress(p2Mines, p1.revealed);
+    const prog2 = countProgress(p1Mines, p2.revealed);
+    if (prog1 !== prog2) return { outcome: "win", winner: prog1 > prog2 ? 1 : 2 };
     return { outcome: "draw" };
   }
 
