@@ -110,14 +110,17 @@ function Cell({
         ) : null;
     }
   } else if (isOpponentRevealed) {
-    // Cell already claimed by the opponent — locked, not clickable
-    bg = "bg-zinc-600";
-    content =
-      !isMine && count > 0 ? (
-        <span className={`font-bold text-xs opacity-40 ${CELL_COLORS[count] ?? "text-zinc-300"}`}>
+    // Cell opened by the opponent — shows as a ghost/shadow (locked in H2H, spectator ghost in ASYM)
+    bg = "bg-zinc-800";
+    if (isMine) {
+      content = <span className="opacity-60">💣</span>;
+    } else if (count > 0) {
+      content = (
+        <span className={`font-bold text-xs opacity-60 ${CELL_COLORS[count] ?? "text-zinc-300"}`}>
           {count}
         </span>
-      ) : null;
+      );
+    }
   } else if (isFlagged) {
     bg = "bg-zinc-700";
     content = "🚩";
@@ -634,14 +637,15 @@ export default function GameClient({ code }: { code: string }) {
                   isMyBoard={false}
                 />
               ) : (
-                // ASYM: show opponent clearing my board
+                // ASYM: show opponent clearing my board (ghost/shadow on cleared tiles)
                 <Board
                   title=""
                   mines={(myState?.mines as boolean[]) ?? new Array(CELL_COUNT).fill(false)}
                   adjacentCounts={computeAdjacentCounts(
                     (myState?.mines as boolean[]) ?? new Array(CELL_COUNT).fill(false)
                   )}
-                  revealed={(oppState.revealed as boolean[])}
+                  revealed={new Array(CELL_COUNT).fill(false)}
+                  opponentRevealed={(oppState.revealed as boolean[])}
                   flagged={new Array(CELL_COUNT).fill(false)}
                   explodedIndex={null}
                   gameOver={gameOver}
