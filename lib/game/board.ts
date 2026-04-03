@@ -87,12 +87,17 @@ export function computeAdjacentCounts(mines: boolean[]): number[] {
  *   - `exploded: true` if the cell is a mine
  *   - `newRevealed` array (copy of revealed with newly revealed cells set to true)
  * Does NOT mutate inputs.
+ *
+ * @param opponentRevealed - Optional array of cells already claimed by the opponent.
+ *   When provided (H2H_TURN mode), flood-fill cascades will not enter opponent-claimed
+ *   cells, enforcing the rule that each tile may only be cleared by one player.
  */
 export function reveal(
   target: number,
   mines: boolean[],
   adjacentCounts: number[],
-  revealed: boolean[]
+  revealed: boolean[],
+  opponentRevealed?: boolean[]
 ): { exploded: boolean; newRevealed: boolean[] } {
   // If already revealed, no-op
   if (revealed[target]) {
@@ -115,6 +120,9 @@ export function reveal(
     const current = queue.shift()!;
     if (visited.has(current)) continue;
     visited.add(current);
+
+    // Skip cells already claimed by the opponent (cell locking for H2H_TURN)
+    if (opponentRevealed?.[current]) continue;
 
     if (!newRevealed[current] && !mines[current]) {
       newRevealed[current] = true;

@@ -236,6 +236,18 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Game not active" }, { status: 409 });
     }
 
+    // H2H_TURN: cannot flag a cell already revealed by the opponent
+    if (match.mode === "H2H_TURN") {
+      const opponentNum = playerNum === 1 ? 2 : 1;
+      const opponentState = states?.find((s) => s.player_num === opponentNum);
+      if (opponentState && (opponentState.revealed as boolean[])[cellIndex]) {
+        return NextResponse.json(
+          { error: "Cell already revealed by opponent" },
+          { status: 409 }
+        );
+      }
+    }
+
     const newFlagged = toggleFlag(
       cellIndex,
       myState.revealed as boolean[],
@@ -298,16 +310,44 @@ export async function PATCH(request: Request, { params }: Params) {
       mines = opponentState.mines as boolean[];
     }
 
+    // H2H_TURN: enforce cell locking — each tile may only be revealed by one player
+    let opponentRevealedForH2H: boolean[] | undefined;
+    if (match.mode === "H2H_TURN") {
+      const opponentNum = playerNum === 1 ? 2 : 1;
+      const opponentState = states?.find((s) => s.player_num === opponentNum);
+      if (opponentState) {
+        opponentRevealedForH2H = opponentState.revealed as boolean[];
+        if (opponentRevealedForH2H[cellIndex]) {
+          return NextResponse.json(
+            { error: "Cell already revealed by opponent" },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
     const adjacentCounts = computeAdjacentCounts(mines);
     const { exploded, newRevealed } = reveal(
       cellIndex,
       mines,
       adjacentCounts,
-      myState.revealed as boolean[]
+      myState.revealed as boolean[],
+      opponentRevealedForH2H
     );
 
     const newRevealCount = myState.reveal_count + 1;
-    const cleared = !exploded && isCleared(mines, newRevealed);
+
+    // H2H_TURN: board is cleared when both players together cover all non-mine cells
+    let cleared: boolean;
+    if (match.mode === "H2H_TURN" && opponentRevealedForH2H) {
+      const combinedRevealed = newRevealed.map(
+        (r, i) => r || opponentRevealedForH2H![i]
+      );
+      cleared = !exploded && isCleared(mines, combinedRevealed);
+    } else {
+      cleared = !exploded && isCleared(mines, newRevealed);
+    }
+
     const now = new Date().toISOString();
 
     const stateUpdate: Record<string, unknown> = {
@@ -340,8 +380,11 @@ export async function PATCH(request: Request, { params }: Params) {
         current_turn: opponentNum,
       };
 
-      // Check if end of round (both have same reveal count)
-      if (bothPlayed) {
+      // Evaluate immediately when board is collectively cleared or when
+      // both players have taken the same number of turns (end of round).
+      const shouldEvaluate = cleared || bothPlayed;
+
+      if (shouldEvaluate) {
         const updatedMyStateForEval = mergeState(myState as PlayerState, {
           revealed: newRevealed,
           reveal_count: newRevealCount,
@@ -365,7 +408,7 @@ export async function PATCH(request: Request, { params }: Params) {
             winner:
               roundResult.outcome === "draw" ? 0 : roundResult.winner,
           };
-        } else {
+        } else if (bothPlayed) {
           matchUpdate = { ...matchUpdate, round: newRound + 1 };
         }
       }
