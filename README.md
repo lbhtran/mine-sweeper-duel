@@ -44,7 +44,14 @@ Go to [supabase.com](https://supabase.com), create a new project, and note your:
 
 ### 2. Apply the database schema
 
-In your Supabase project, open the **SQL Editor** and run the contents of [`supabase/schema.sql`](./supabase/schema.sql).
+The schema is applied automatically by the **Migrate Database** GitHub Actions workflow (`.github/workflows/migrate.yml`) whenever `supabase/schema.sql` changes on the `main` branch, or on manual trigger.
+
+To enable the workflow, add a `SUPABASE_DB_URL` repository secret (**Settings → Secrets and variables → Actions**) with your Supabase database connection string:
+```
+postgresql://postgres:[DB_PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
+```
+
+You can also apply the schema manually: in your Supabase project, open the **SQL Editor** and run the contents of [`supabase/schema.sql`](./supabase/schema.sql).
 
 This creates:
 - `matches` table
