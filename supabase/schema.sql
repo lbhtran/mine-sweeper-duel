@@ -40,6 +40,11 @@ create table if not exists public.player_states (
   unique (match_id, player_num)
 );
 
+-- ──────────── Migrations ────────────
+-- Idempotent column additions for databases created before these columns were added.
+-- Safe to re-run: ADD COLUMN IF NOT EXISTS is a no-op when the column already exists.
+alter table public.player_states add column if not exists ready boolean not null default false;
+
 -- ──────────── Indexes ────────────
 create index if not exists idx_matches_code on public.matches (code);
 create index if not exists idx_player_states_match_id on public.player_states (match_id);
