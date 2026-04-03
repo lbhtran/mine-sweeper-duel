@@ -110,8 +110,9 @@ function Cell({
         ) : null;
     }
   } else if (isOpponentRevealed) {
-    // Cell opened by the opponent — shows as a ghost/shadow (locked in H2H, spectator ghost in ASYM)
-    bg = "bg-zinc-800";
+    // Cell opened by the opponent — ghost/shadow style. Ring makes even empty cleared cells
+    // distinguishable from unrevealed tiles (bg-zinc-700).
+    bg = "bg-zinc-800 ring-1 ring-inset ring-zinc-600";
     if (isMine) {
       content = <span className="opacity-60">💣</span>;
     } else if (count > 0) {
@@ -134,7 +135,11 @@ function Cell({
       onClick={handleClick}
       onContextMenu={handleRightClick}
       className={`w-8 h-8 flex items-center justify-center text-sm rounded select-none transition-colors ${bg} ${
-        canAct && isMyBoard && !isRevealed && !isOpponentRevealed ? "cursor-pointer" : "cursor-default"
+        isOpponentRevealed && isMyBoard
+          ? "cursor-not-allowed"
+          : canAct && isMyBoard && !isRevealed && !isOpponentRevealed
+          ? "cursor-pointer"
+          : "cursor-default"
       }`}
       aria-label={`Cell ${index}`}
     >
@@ -149,9 +154,12 @@ interface BoardProps extends Omit<CellProps, "index"> {
   title: string;
 }
 
-function Board({ title, mines, adjacentCounts, revealed, flagged, ...rest }: BoardProps) {
+function Board({ title, mines, adjacentCounts, revealed, flagged, opponentRevealed, ...rest }: BoardProps) {
   const safeCells = mines.filter((m) => !m).length;
-  const revealedSafe = revealed.filter((r, i) => r && !mines[i]).length;
+  // Count safe cells cleared directly by this player plus ghost cells cleared by the opponent
+  const revealedSafe =
+    revealed.filter((r, i) => r && !mines[i]).length +
+    (opponentRevealed?.filter((r, i) => r && !mines[i]).length ?? 0);
 
   return (
     <div className="space-y-2">
@@ -173,6 +181,7 @@ function Board({ title, mines, adjacentCounts, revealed, flagged, ...rest }: Boa
             adjacentCounts={adjacentCounts}
             revealed={revealed}
             flagged={flagged}
+            opponentRevealed={opponentRevealed}
             {...rest}
           />
         ))}
@@ -397,6 +406,15 @@ export default function GameClient({ code }: { code: string }) {
     isMyTurn &&
     !myState?.exploded &&
     !myState?.cleared;
+
+  // ASYM: find which of my planted mines the opponent hit (to render the explosion marker)
+  let oppBoardExplodedIndex: number | null = null;
+  if (match?.mode === "ASYM_PLANT_CLEAR" && oppState?.exploded && myState?.mines) {
+    const myMines = myState.mines as boolean[];
+    const oppRev = oppState.revealed as boolean[];
+    const idx = oppRev.findIndex((r, i) => r && myMines[i]);
+    oppBoardExplodedIndex = idx >= 0 ? idx : null;
+  }
 
   // ── Win / result display ──
   let resultMsg = "";
@@ -647,7 +665,7 @@ export default function GameClient({ code }: { code: string }) {
                   revealed={new Array(CELL_COUNT).fill(false)}
                   opponentRevealed={(oppState.revealed as boolean[])}
                   flagged={new Array(CELL_COUNT).fill(false)}
-                  explodedIndex={null}
+                  explodedIndex={oppBoardExplodedIndex}
                   gameOver={gameOver}
                   canAct={false}
                   onReveal={() => {}}
