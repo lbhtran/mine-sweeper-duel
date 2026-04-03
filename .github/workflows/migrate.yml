@@ -1,0 +1,25 @@
+name: Migrate Database
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/schema.sql'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    name: Run database migration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 -f supabase/schema.sql
