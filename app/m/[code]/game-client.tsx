@@ -407,13 +407,20 @@ export default function GameClient({ code }: { code: string }) {
     !myState?.exploded &&
     !myState?.cleared;
 
-  // ASYM: find which of my planted mines the opponent hit (to render the explosion marker)
+  // Find which mine the opponent hit so we can render the explosion marker on their board.
+  // Works for both modes: H2H uses the shared mines array; ASYM uses my planted mines.
   let oppBoardExplodedIndex: number | null = null;
-  if (match?.mode === "ASYM_PLANT_CLEAR" && oppState?.exploded && myState?.mines) {
-    const myMines = myState.mines as boolean[];
+  if (oppState?.exploded) {
     const oppRev = oppState.revealed as boolean[];
-    const idx = oppRev.findIndex((r, i) => r && myMines[i]);
-    oppBoardExplodedIndex = idx >= 0 ? idx : null;
+    if (match?.mode === "H2H_TURN") {
+      // Shared board — mines already in the `mines` variable
+      const idx = oppRev.findIndex((r, i) => r && mines[i]);
+      oppBoardExplodedIndex = idx >= 0 ? idx : null;
+    } else if (match?.mode === "ASYM_PLANT_CLEAR" && myState?.mines) {
+      const myMines = myState.mines as boolean[];
+      const idx = oppRev.findIndex((r, i) => r && myMines[i]);
+      oppBoardExplodedIndex = idx >= 0 ? idx : null;
+    }
   }
 
   // ── Win / result display ──
@@ -647,7 +654,7 @@ export default function GameClient({ code }: { code: string }) {
                   adjacentCounts={adjacentCounts}
                   revealed={(oppState.revealed as boolean[])}
                   flagged={gameOver ? (oppState.flagged as boolean[]) : new Array(CELL_COUNT).fill(false)}
-                  explodedIndex={null}
+                  explodedIndex={oppBoardExplodedIndex}
                   gameOver={gameOver}
                   canAct={false}
                   onReveal={() => {}}
