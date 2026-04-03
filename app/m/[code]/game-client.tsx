@@ -51,6 +51,7 @@ interface CellProps {
   explodedIndex: number | null;
   gameOver: boolean;
   canAct: boolean;
+  flagMode: boolean;
   onReveal: (i: number) => void;
   onFlag: (i: number) => void;
   isMyBoard: boolean; // false = viewing for reference only
@@ -66,6 +67,7 @@ function Cell({
   explodedIndex,
   gameOver,
   canAct,
+  flagMode,
   onReveal,
   onFlag,
   isMyBoard,
@@ -79,7 +81,12 @@ function Cell({
 
   const handleClick = () => {
     if (!canAct || !isMyBoard) return;
-    if (!isRevealed && !isFlagged && !isOpponentRevealed) onReveal(index);
+    if (isRevealed || isOpponentRevealed) return;
+    if (flagMode) {
+      onFlag(index);
+    } else {
+      if (!isFlagged) onReveal(index);
+    }
   };
 
   const handleRightClick = (e: React.MouseEvent) => {
@@ -138,7 +145,9 @@ function Cell({
         isOpponentRevealed && isMyBoard
           ? "cursor-not-allowed"
           : canAct && isMyBoard && !isRevealed && !isOpponentRevealed
-          ? "cursor-pointer"
+          ? flagMode
+            ? "cursor-crosshair"
+            : "cursor-pointer"
           : "cursor-default"
       }`}
       aria-label={`Cell ${index}`}
@@ -270,6 +279,7 @@ export default function GameClient({ code }: { code: string }) {
   const [actionPending, setActionPending] = useState(false);
   const [explodedIndex, setExplodedIndex] = useState<number | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
+  const [flagMode, setFlagMode] = useState(false);
   const didJoin = useRef(false);
 
   // ── Join / load match ──
@@ -604,9 +614,25 @@ export default function GameClient({ code }: { code: string }) {
                 You (P{playerNum}){" "}
                 {myState?.exploded ? "💥" : myState?.cleared ? "✅" : ""}
               </span>
-              <span className="text-zinc-500">
-                🚩 {myFlagCount}/{FLAG_CAP}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">
+                  🚩 {myFlagCount}/{FLAG_CAP}
+                </span>
+                {canAct && (
+                  <button
+                    onClick={() => setFlagMode((f) => !f)}
+                    title={flagMode ? "Switch to reveal mode" : "Switch to flag mode"}
+                    aria-label={flagMode ? "Switch to reveal mode" : "Switch to flag mode"}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                      flagMode
+                        ? "bg-orange-900 text-orange-300 hover:bg-orange-800"
+                        : "bg-indigo-900 text-indigo-300 hover:bg-indigo-800"
+                    }`}
+                  >
+                    {flagMode ? "🚩 Flag" : "⛏️ Reveal"}
+                  </button>
+                )}
+              </div>
             </div>
             <Board
               title=""
@@ -614,6 +640,7 @@ export default function GameClient({ code }: { code: string }) {
               adjacentCounts={adjacentCounts}
               revealed={myRevealed}
               flagged={myFlagged}
+              flagMode={flagMode}
               opponentRevealed={
                 match.mode === "H2H_TURN"
                   ? ((oppState?.revealed as boolean[]) ?? undefined)
@@ -654,6 +681,7 @@ export default function GameClient({ code }: { code: string }) {
                   adjacentCounts={adjacentCounts}
                   revealed={(oppState.revealed as boolean[])}
                   flagged={gameOver ? (oppState.flagged as boolean[]) : new Array(CELL_COUNT).fill(false)}
+                  flagMode={false}
                   explodedIndex={oppBoardExplodedIndex}
                   gameOver={gameOver}
                   canAct={false}
@@ -672,6 +700,7 @@ export default function GameClient({ code }: { code: string }) {
                   revealed={new Array(CELL_COUNT).fill(false)}
                   opponentRevealed={(oppState.revealed as boolean[])}
                   flagged={new Array(CELL_COUNT).fill(false)}
+                  flagMode={false}
                   explodedIndex={oppBoardExplodedIndex}
                   gameOver={gameOver}
                   canAct={false}
