@@ -223,49 +223,73 @@ function PlantBoard({ mines, onToggle, onReady, isReady, opponentReady, disabled
             ({mineCount}/{MINE_COUNT})
           </span>
         </h3>
+      </div>
+
+      {/* Mine grid — locked with overlay once ready */}
+      <div className="relative">
+        <div
+          className={`grid gap-0.5 transition-opacity ${isReady ? "opacity-40 pointer-events-none" : ""}`}
+          style={{ gridTemplateColumns: `repeat(${BOARD_SIZE}, 2rem)` }}
+        >
+          {Array.from({ length: CELL_COUNT }, (_, i) => (
+            <button
+              key={i}
+              onClick={() => !isReady && onToggle(i)}
+              disabled={isReady || disabled}
+              className={`w-8 h-8 flex items-center justify-center text-sm rounded select-none transition-colors ${
+                mines[i]
+                  ? "bg-red-800 hover:bg-red-700 disabled:hover:bg-red-800"
+                  : "bg-zinc-700 hover:bg-zinc-600 disabled:hover:bg-zinc-700"
+              } disabled:cursor-not-allowed`}
+              aria-label={`Plant mine at cell ${i}`}
+            >
+              {mines[i] ? "💣" : null}
+            </button>
+          ))}
+        </div>
+        {/* Locked overlay shown once player clicks Ready */}
         {isReady && (
-          <span className="text-emerald-400 text-sm font-medium">✅ Ready!</span>
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg">
+            <span className="bg-zinc-900/80 text-zinc-300 text-xs px-3 py-1 rounded-full border border-zinc-700">
+              🔒 Layout locked
+            </span>
+          </div>
         )}
       </div>
-      <div
-        className="grid gap-0.5"
-        style={{ gridTemplateColumns: `repeat(${BOARD_SIZE}, 2rem)` }}
-      >
-        {Array.from({ length: CELL_COUNT }, (_, i) => (
+
+      {isReady ? (
+        /* Readied / waiting state */
+        <div className="space-y-3">
+          <div className="bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3 text-center space-y-1">
+            <p className="text-emerald-300 font-semibold">✅ You&apos;re ready!</p>
+            <p className="text-emerald-500 text-xs">Waiting for your opponent to place their mines and click Ready.</p>
+          </div>
+          <p className={`text-xs text-center ${opponentReady ? "text-emerald-400" : "text-zinc-500"}`}>
+            {opponentReady ? "✅ Opponent is ready — starting soon…" : "⏳ Opponent is still planting…"}
+          </p>
+        </div>
+      ) : (
+        /* Pre-ready state */
+        <div className="space-y-3">
+          <p className="text-xs text-zinc-500">
+            Click cells to place/remove mines. Place all 10 mines, then click Ready.
+          </p>
           <button
-            key={i}
-            onClick={() => !isReady && onToggle(i)}
-            disabled={isReady || disabled}
-            className={`w-8 h-8 flex items-center justify-center text-sm rounded select-none transition-colors ${
-              mines[i]
-                ? "bg-red-800 hover:bg-red-700 disabled:hover:bg-red-800"
-                : "bg-zinc-700 hover:bg-zinc-600 disabled:hover:bg-zinc-700"
-            } disabled:cursor-not-allowed`}
-            aria-label={`Plant mine at cell ${i}`}
+            onClick={onReady}
+            disabled={!canReady || disabled}
+            className={`w-full py-2 rounded-xl text-sm font-semibold transition-colors ${
+              canReady && !disabled
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+            }`}
           >
-            {mines[i] ? "💣" : null}
+            Ready!
           </button>
-        ))}
-      </div>
-      <p className="text-xs text-zinc-500">
-        {isReady
-          ? "Mine layout locked. Waiting for opponent…"
-          : "Click cells to place/remove mines. Place all 10 mines, then click Ready."}
-      </p>
-      <button
-        onClick={onReady}
-        disabled={!canReady || disabled}
-        className={`w-full py-2 rounded-xl text-sm font-semibold transition-colors ${
-          canReady && !disabled
-            ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-            : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-        }`}
-      >
-        {isReady ? "⏳ Waiting for opponent…" : "Ready!"}
-      </button>
-      <p className={`text-xs text-center ${opponentReady ? "text-emerald-400" : "text-zinc-500"}`}>
-        {opponentReady ? "✅ Opponent is ready" : "⏳ Opponent is still planting…"}
-      </p>
+          <p className={`text-xs text-center ${opponentReady ? "text-emerald-400" : "text-zinc-500"}`}>
+            {opponentReady ? "✅ Opponent is ready" : "⏳ Opponent is still planting…"}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
