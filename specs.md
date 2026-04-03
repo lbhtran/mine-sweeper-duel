@@ -105,23 +105,24 @@ Notes:
 ### 4.1 Overview
 
 - Each player has their own 9×9 board.
-- **Planting phase:** each player places mines on **their own** board.
-- **Clearing phase:** each player clears the **opponent's** board.
-- Clearing is **simultaneous** (not turn-based).
+- **Planting phase:** each player places mines on **their own** board, then clicks **Ready**.
+- **Clearing phase:** players take turns clearing the **opponent's** board.
 
 ### 4.2 Planting Phase
 
-- Duration: **30 seconds**.
-- Each player may place **0 to 10 mines** on their own board.
-  - Fewer mines gives the opponent an advantage.
-- At the end of 30 seconds, mine placement is locked and the game transitions to clearing.
-
-Special case:
-- If a player plants **0 mines**, then the opponent's first safe reveal will naturally cascade to reveal the whole board (all zeros) under standard Minesweeper flood fill.
+- There is **no time limit**. Players may take as long as they need.
+- Each player must place **exactly 10 mines** on their own board before they can click Ready.
+  - Mines can be placed and removed freely until Ready is clicked.
+  - Clicking a tile toggles the mine on/off.
+- Once a player clicks **Ready**, their mine layout is locked and cannot be changed.
+- The clearing phase begins as soon as **both players have clicked Ready**.
 
 ### 4.3 Clearing Phase
 
-- Both players play simultaneously.
+- Players **take turns** revealing cells on the opponent's board (same turn structure as H2H_TURN, Section 3.2).
+- The player whose turn it is may toggle flags any number of times, then must make exactly one reveal.
+- After the reveal resolves, the turn passes to the opponent.
+- If one player finishes (clears or explodes), the other player continues taking turns until they also finish.
 - Reveal rules follow core Minesweeper behavior (Section 2).
 
 ### 4.4 Win Conditions

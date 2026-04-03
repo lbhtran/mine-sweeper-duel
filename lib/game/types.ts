@@ -20,9 +20,9 @@ export interface Match {
   seed: number | null; // for H2H_TURN board generation
   player1_id: string | null;
   player2_id: string | null;
-  current_turn: number; // 1 or 2 (H2H_TURN)
+  current_turn: number; // 1 or 2 (both modes during PLAYING)
   round: number; // completed rounds (H2H_TURN)
-  planting_deadline: string | null; // ISO timestamp (ASYM)
+  planting_deadline: string | null; // ISO timestamp (unused — kept for schema compatibility)
   clearing_started_at: string | null; // ISO timestamp (ASYM)
   winner: number | null; // 1, 2, or 0 for draw
   created_at: string;
@@ -41,6 +41,7 @@ export interface PlayerState {
   cleared_at: string | null;
   exploded_at: string | null;
   mines: boolean[] | null; // ASYM: mines this player planted on their own board
+  ready: boolean; // ASYM planting: player has clicked ready
 }
 
 // Derived cell state for rendering

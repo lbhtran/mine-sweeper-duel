@@ -36,6 +36,7 @@ create table if not exists public.player_states (
   cleared_at   timestamptz,
   exploded_at  timestamptz,
   mines        boolean[],                             -- ASYM: mines planted by this player
+  ready        boolean     not null default false,     -- ASYM planting: player clicked ready
   unique (match_id, player_num)
 );
 

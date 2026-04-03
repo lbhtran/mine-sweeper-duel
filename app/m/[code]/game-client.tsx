@@ -204,39 +204,27 @@ function Board({ title, mines, adjacentCounts, revealed, flagged, opponentReveal
 interface PlantBoardProps {
   mines: boolean[];
   onToggle: (i: number) => void;
-  deadline: string | null;
+  onReady: () => void;
+  isReady: boolean;
+  opponentReady: boolean;
+  disabled: boolean;
 }
 
-function PlantBoard({ mines, onToggle, deadline }: PlantBoardProps) {
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+function PlantBoard({ mines, onToggle, onReady, isReady, opponentReady, disabled }: PlantBoardProps) {
   const mineCount = mines.filter(Boolean).length;
-
-  useEffect(() => {
-    if (!deadline) return;
-    const update = () => {
-      const diff = Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000));
-      setSecondsLeft(diff);
-    };
-    update();
-    const id = setInterval(update, 500);
-    return () => clearInterval(id);
-  }, [deadline]);
+  const canReady = mineCount === MINE_COUNT && !isReady;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-300">
           Plant your mines{" "}
-          <span className="text-zinc-500">({mineCount}/{MINE_COUNT})</span>
-        </h3>
-        {secondsLeft !== null && (
-          <span
-            className={`text-sm font-mono ${
-              secondsLeft <= 10 ? "text-red-400" : "text-zinc-400"
-            }`}
-          >
-            {secondsLeft}s
+          <span className={mineCount === MINE_COUNT ? "text-emerald-400" : "text-zinc-500"}>
+            ({mineCount}/{MINE_COUNT})
           </span>
+        </h3>
+        {isReady && (
+          <span className="text-emerald-400 text-sm font-medium">✅ Ready!</span>
         )}
       </div>
       <div
@@ -246,10 +234,13 @@ function PlantBoard({ mines, onToggle, deadline }: PlantBoardProps) {
         {Array.from({ length: CELL_COUNT }, (_, i) => (
           <button
             key={i}
-            onClick={() => onToggle(i)}
+            onClick={() => !isReady && onToggle(i)}
+            disabled={isReady || disabled}
             className={`w-8 h-8 flex items-center justify-center text-sm rounded select-none transition-colors ${
-              mines[i] ? "bg-red-800 hover:bg-red-700" : "bg-zinc-700 hover:bg-zinc-600"
-            }`}
+              mines[i]
+                ? "bg-red-800 hover:bg-red-700 disabled:hover:bg-red-800"
+                : "bg-zinc-700 hover:bg-zinc-600 disabled:hover:bg-zinc-700"
+            } disabled:cursor-not-allowed`}
             aria-label={`Plant mine at cell ${i}`}
           >
             {mines[i] ? "💣" : null}
@@ -257,7 +248,23 @@ function PlantBoard({ mines, onToggle, deadline }: PlantBoardProps) {
         ))}
       </div>
       <p className="text-xs text-zinc-500">
-        Click cells to place/remove mines. Your opponent will have to clear this board.
+        {isReady
+          ? "Mine layout locked. Waiting for opponent…"
+          : "Click cells to place/remove mines. Place all 10 mines, then click Ready."}
+      </p>
+      <button
+        onClick={onReady}
+        disabled={!canReady || disabled}
+        className={`w-full py-2 rounded-xl text-sm font-semibold transition-colors ${
+          canReady && !disabled
+            ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+            : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+        }`}
+      >
+        {isReady ? "⏳ Waiting for opponent…" : "Ready!"}
+      </button>
+      <p className={`text-xs text-center ${opponentReady ? "text-emerald-400" : "text-zinc-500"}`}>
+        {opponentReady ? "✅ Opponent is ready" : "⏳ Opponent is still planting…"}
       </p>
     </div>
   );
@@ -406,8 +413,7 @@ export default function GameClient({ code }: { code: string }) {
     }
   }
 
-  const isMyTurn =
-    match?.mode === "H2H_TURN" ? match.current_turn === playerNum : true;
+  const isMyTurn = match?.current_turn === playerNum;
   const gameOver = match?.status === "FINISHED";
   const canAct =
     !actionPending &&
@@ -490,6 +496,30 @@ export default function GameClient({ code }: { code: string }) {
     [doAction]
   );
 
+  const handleReady = useCallback(async () => {
+    if (!playerNum) return;
+    setActionPending(true);
+    try {
+      const res = await fetch(`/api/matches/${code}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ready", playerNum }),
+      });
+      const data = await res.json();
+      if (res.ok && data.playerState) {
+        setPlayerStates((prev) => {
+          const idx = prev.findIndex((s) => s.player_num === playerNum);
+          if (idx === -1) return [...prev, data.playerState];
+          const next = [...prev];
+          next[idx] = data.playerState;
+          return next;
+        });
+      }
+    } finally {
+      setActionPending(false);
+    }
+  }, [code, playerNum]);
+
   // ── Render ──
   if (loading) {
     return (
@@ -528,7 +558,7 @@ export default function GameClient({ code }: { code: string }) {
         </div>
         <p className="text-sm text-zinc-500">
           Mode:{" "}
-          {match.mode === "H2H_TURN" ? "⚔️ Turn-based" : "🌱 Plant & Clear"}
+          {match.mode === "H2H_TURN" ? "⚔️ Classic" : "🌱 Plant & Clear"}
         </p>
       </div>
     );
@@ -537,19 +567,25 @@ export default function GameClient({ code }: { code: string }) {
   // ── PLANTING screen (ASYM) ──
   if (match.status === "PLANTING" && match.mode === "ASYM_PLANT_CLEAR") {
     const myMines = (myState?.mines ?? new Array(CELL_COUNT).fill(false)) as boolean[];
+    const isReady = myState?.ready ?? false;
+    const opponentReady = oppState?.ready ?? false;
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 p-6">
         <div className="w-full max-w-lg space-y-6">
           <header className="text-center">
             <h1 className="text-2xl font-bold">Plant Your Mines</h1>
             <p className="text-sm text-zinc-400 mt-1">
-              Place up to {MINE_COUNT} mines. Your opponent will have to clear this board.
+              Place exactly {MINE_COUNT} mines on your board, then click Ready.
+              Your opponent will have to clear this board, taking turns.
             </p>
           </header>
           <PlantBoard
             mines={myMines}
             onToggle={handlePlant}
-            deadline={match.planting_deadline}
+            onReady={handleReady}
+            isReady={isReady}
+            opponentReady={opponentReady}
+            disabled={actionPending}
           />
         </div>
       </div>
@@ -574,9 +610,9 @@ export default function GameClient({ code }: { code: string }) {
         </div>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-zinc-400">
-            {match.mode === "H2H_TURN" ? "⚔️ Turn-based" : "🌱 Plant & Clear"}
+            {match.mode === "H2H_TURN" ? "⚔️ Classic" : "🌱 Plant & Clear"}
           </span>
-          {match.mode === "H2H_TURN" && (
+          {!gameOver && (
             <span
               className={`px-3 py-1 rounded-full text-xs font-medium ${
                 isMyTurn
@@ -584,7 +620,11 @@ export default function GameClient({ code }: { code: string }) {
                   : "bg-zinc-800 text-zinc-400"
               }`}
             >
-              {isMyTurn ? "Your turn" : "Opponent's turn"}
+              {isMyTurn
+                ? myState?.exploded || myState?.cleared
+                  ? "⏳ Waiting…"
+                  : "Your turn"
+                : "Opponent's turn"}
             </span>
           )}
         </div>
