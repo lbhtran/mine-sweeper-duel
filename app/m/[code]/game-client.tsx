@@ -164,7 +164,7 @@ interface BoardProps extends Omit<CellProps, "index"> {
 }
 
 function Board({ title, mines, adjacentCounts, revealed, flagged, opponentRevealed, ...rest }: BoardProps) {
-  const safeCells = mines.filter((m) => !m).length;
+  const safeCells = CELL_COUNT - MINE_COUNT;
   // Count safe cells cleared directly by this player plus ghost cells cleared by the opponent
   const revealedSafe =
     revealed.filter((r, i) => r && !mines[i]).length +
