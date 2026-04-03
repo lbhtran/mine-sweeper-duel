@@ -94,14 +94,10 @@ export async function POST(request: Request, { params }: Params) {
 
   // Transition to PLAYING (H2H_TURN) or PLANTING (ASYM)
   const newStatus = match.mode === "ASYM_PLANT_CLEAR" ? "PLANTING" : "PLAYING";
-  const planting_deadline =
-    match.mode === "ASYM_PLANT_CLEAR"
-      ? new Date(Date.now() + 30_000).toISOString()
-      : null;
 
   const { data: updatedMatch } = await supabase
     .from("matches")
-    .update({ player2_id: playerId, status: newStatus, planting_deadline })
+    .update({ player2_id: playerId, status: newStatus, planting_deadline: null })
     .eq("id", match.id)
     .select()
     .single();
@@ -148,19 +144,27 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const { action, playerNum, cellIndex } = body as {
-    action: "reveal" | "flag" | "plant";
+    action: "reveal" | "flag" | "plant" | "ready";
     playerNum: 1 | 2;
     cellIndex: number;
   };
 
   if (
-    !["reveal", "flag", "plant"].includes(action) ||
-    ![1, 2].includes(playerNum) ||
-    typeof cellIndex !== "number" ||
-    cellIndex < 0 ||
-    cellIndex >= CELL_COUNT
+    !["reveal", "flag", "plant", "ready"].includes(action) ||
+    ![1, 2].includes(playerNum)
   ) {
     return NextResponse.json({ error: "Invalid action params" }, { status: 400 });
+  }
+
+  // Cell-based actions require a valid cellIndex
+  if (action !== "ready") {
+    if (
+      typeof cellIndex !== "number" ||
+      cellIndex < 0 ||
+      cellIndex >= CELL_COUNT
+    ) {
+      return NextResponse.json({ error: "Invalid cellIndex" }, { status: 400 });
+    }
   }
 
   const supabase = createServerClient();
@@ -199,6 +203,14 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
 
+    // Cannot change mines after clicking ready
+    if (myState.ready) {
+      return NextResponse.json(
+        { error: "Already readied — mine layout is locked" },
+        { status: 409 }
+      );
+    }
+
     const mines = [...(myState.mines as boolean[])];
     const currentMineCount = mines.filter(Boolean).length;
 
@@ -226,10 +238,62 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ playerState: updated });
   }
 
+  // ──────── READY (ASYM: lock mines and signal ready to start) ────────
+  if (action === "ready") {
+    if (match.status !== "PLANTING") {
+      return NextResponse.json(
+        { error: "Not in planting phase" },
+        { status: 409 }
+      );
+    }
+
+    if (myState.ready) {
+      return NextResponse.json({ error: "Already ready" }, { status: 409 });
+    }
+
+    const mines = (myState.mines as boolean[]) ?? new Array(CELL_COUNT).fill(false);
+    const mineCount = mines.filter(Boolean).length;
+
+    if (mineCount !== MINE_COUNT) {
+      return NextResponse.json(
+        { error: `Must place exactly ${MINE_COUNT} mines before readying` },
+        { status: 409 }
+      );
+    }
+
+    // Mark this player as ready
+    const { data: updatedState } = await supabase
+      .from("player_states")
+      .update({ ready: true })
+      .eq("id", myState.id)
+      .select()
+      .single();
+
+    // Re-fetch opponent state to check if both are now ready
+    const opponentNum = playerNum === 1 ? 2 : 1;
+    const { data: freshStates } = await supabase
+      .from("player_states")
+      .select("*")
+      .eq("match_id", match.id)
+      .order("player_num");
+
+    const opponentState = freshStates?.find((s) => s.player_num === opponentNum);
+
+    if (opponentState?.ready) {
+      // Both players ready — start the clearing phase
+      await supabase
+        .from("matches")
+        .update({ status: "PLAYING", current_turn: 1 })
+        .eq("id", match.id);
+    }
+
+    return NextResponse.json({ playerState: updatedState });
+  }
+
   // ──────── FLAG ────────
   if (action === "flag") {
-    // In H2H_TURN, flags may only be toggled on the player's own turn
-    if (match.mode === "H2H_TURN" && match.current_turn !== playerNum) {
+    // Flags may only be toggled on the player's own turn (both modes)
+    if (match.current_turn !== playerNum) {
       return NextResponse.json({ error: "Not your turn" }, { status: 409 });
     }
     if (match.status !== "PLAYING") {
@@ -277,8 +341,8 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Game not active" }, { status: 409 });
     }
 
-    // H2H_TURN: only the current player can reveal
-    if (match.mode === "H2H_TURN" && match.current_turn !== playerNum) {
+    // H2H_TURN and ASYM_PLANT_CLEAR: only the current player can reveal
+    if (match.current_turn !== playerNum) {
       return NextResponse.json({ error: "Not your turn" }, { status: 409 });
     }
 
@@ -416,16 +480,14 @@ export async function PATCH(request: Request, { params }: Params) {
       await supabase.from("matches").update(matchUpdate).eq("id", match.id);
     }
 
-    // ── ASYM: check if both done ──
+    // ── ASYM: handle turns and check if both done ──
     if (match.mode === "ASYM_PLANT_CLEAR") {
       const opponentNum = playerNum === 1 ? 2 : 1;
       const opponentState = states?.find((s) => s.player_num === opponentNum);
+      const opponentDone = opponentState && (opponentState.exploded || opponentState.cleared);
+      const currentDone = exploded || cleared;
 
-      if (
-        opponentState &&
-        (exploded || cleared) &&
-        (opponentState.exploded || opponentState.cleared)
-      ) {
+      if (currentDone && opponentDone) {
         // Both done — evaluate
         const updatedMyStateForEval = mergeState(myState as PlayerState, {
           revealed: newRevealed,
@@ -452,6 +514,20 @@ export async function PATCH(request: Request, { params }: Params) {
           status: "FINISHED",
           winner: result.outcome === "draw" ? 0 : result.outcome === "win" ? result.winner : null,
         }).eq("id", match.id);
+      } else {
+        // Game still in progress — advance turn
+        let nextTurn: number;
+        if (currentDone) {
+          // Current player just finished → switch to opponent so they can continue
+          nextTurn = opponentNum;
+        } else if (opponentDone) {
+          // Opponent is already done → keep turn with current player so they can continue
+          nextTurn = playerNum;
+        } else {
+          // Neither done → alternate turns normally
+          nextTurn = opponentNum;
+        }
+        await supabase.from("matches").update({ current_turn: nextTurn }).eq("id", match.id);
       }
     }
 

@@ -86,7 +86,7 @@ export default function Home() {
                     : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
                 }`}
               >
-                ⚔️ Turn-based
+              ⚔️ Classic
               </button>
               <button
                 onClick={() => setMode("ASYM_PLANT_CLEAR")}
@@ -101,8 +101,8 @@ export default function Home() {
             </div>
             <p className="text-xs text-zinc-500">
               {mode === "H2H_TURN"
-                ? "Both players reveal cells alternately on the same board."
-                : "Plant mines on your board, then race to clear the opponent's board."}
+                ? "Both players reveal cells alternately on the same seeded board."
+                : "Plant mines on your board, then take turns clearing the opponent's board."}
             </p>
           </div>
 
