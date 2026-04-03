@@ -22,4 +22,7 @@ jobs:
       - name: Run migration
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: psql "$SUPABASE_DB_URL" --set ON_ERROR_STOP=1 -f supabase/schema.sql
+        run: |
+          # Strip Supabase-specific query parameters that are not valid for psql
+          DB_URL="${SUPABASE_DB_URL%%\?*}"
+          psql "$DB_URL" --set ON_ERROR_STOP=1 -f supabase/schema.sql
