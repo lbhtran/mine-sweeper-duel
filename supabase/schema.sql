@@ -54,6 +54,7 @@ alter table public.matches enable row level security;
 alter table public.player_states enable row level security;
 
 -- Allow anyone to read matches (needed for joining by code)
+drop policy if exists "matches_read" on public.matches;
 create policy "matches_read" on public.matches
   for select using (true);
 
@@ -62,10 +63,24 @@ create policy "matches_read" on public.matches
 -- Client-side only reads via anon key (RLS select policy above).
 
 -- Allow client to read player_states for their own match
+drop policy if exists "player_states_read" on public.player_states;
 create policy "player_states_read" on public.player_states
   for select using (true);
 
 -- ──────────── Realtime ────────────
 -- Enable realtime for both tables so clients can subscribe to changes.
-alter publication supabase_realtime add table public.matches;
-alter publication supabase_realtime add table public.player_states;
+-- Wrapped in a DO block so re-runs are safe (add table is a no-op if already a member).
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.matches;
+  exception when duplicate_object then
+    -- table already a member of the publication
+  end;
+  begin
+    alter publication supabase_realtime add table public.player_states;
+  exception when duplicate_object then
+    -- table already a member of the publication
+  end;
+end
+$$;
