@@ -225,6 +225,13 @@ export async function PATCH(request: Request, { params }: Params) {
       attempts++;
     }
 
+    if (attempts >= 10) {
+      return NextResponse.json(
+        { error: "Could not generate a unique match code, please try again" },
+        { status: 500 }
+      );
+    }
+
     // Determine the player_id of the initiating player
     const initiatorPlayerId =
       playerNum === 1 ? match.player1_id : match.player2_id;
@@ -259,7 +266,7 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 
     // Create player state for the initiator in the new match
-    await supabase.from("player_states").insert({
+    const { error: stateError } = await supabase.from("player_states").insert({
       match_id: newMatch.id,
       player_num: 1,
       player_id: initiatorPlayerId,
@@ -275,6 +282,15 @@ export async function PATCH(request: Request, { params }: Params) {
           ? new Array(CELL_COUNT).fill(false)
           : null,
     });
+
+    if (stateError) {
+      // Clean up the orphaned match row
+      await supabase.from("matches").delete().eq("id", newMatch.id);
+      return NextResponse.json(
+        { error: stateError.message ?? "Failed to create rematch player state" },
+        { status: 500 }
+      );
+    }
 
     // Store the rematch code on the old match so the other player gets notified via realtime
     await supabase

@@ -579,6 +579,9 @@ export default function GameClient({ code }: { code: string }) {
     navigator.clipboard.writeText(window.location.href).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Fallback: prompt the user to copy manually
+      prompt("Copy this link to share:", window.location.href);
     });
   }, []);
 
