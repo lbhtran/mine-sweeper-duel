@@ -25,6 +25,7 @@ export interface Match {
   planting_deadline: string | null; // ISO timestamp (unused — kept for schema compatibility)
   clearing_started_at: string | null; // ISO timestamp (ASYM)
   winner: number | null; // 1, 2, or 0 for draw
+  rematch_code: string | null; // code of a follow-up rematch match
   created_at: string;
 }
 
