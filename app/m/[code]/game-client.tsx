@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import {
   generateMinesFromSeed,
@@ -297,6 +298,7 @@ function PlantBoard({ mines, onToggle, onReady, isReady, opponentReady, disabled
 // ──────────────────────────── Main GameClient ────────────────────────────
 
 export default function GameClient({ code }: { code: string }) {
+  const router = useRouter();
   // createBrowserClient is memoized via useRef so the instance is stable across renders
   const supabaseRef = useRef(createBrowserClient());
   const supabase = supabaseRef.current;
@@ -311,6 +313,8 @@ export default function GameClient({ code }: { code: string }) {
   const [explodedIndex, setExplodedIndex] = useState<number | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
   const [flagMode, setFlagMode] = useState(false);
+  const [rematchPending, setRematchPending] = useState(false);
+  const [copied, setCopied] = useState(false);
   const didJoin = useRef(false);
 
   // ── Join / load match ──
@@ -417,6 +421,15 @@ export default function GameClient({ code }: { code: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [match?.id, supabase]);
 
+  // ── Redirect when the other player initiates a rematch ──
+  useEffect(() => {
+    if (!match?.rematch_code || !playerNum) return;
+    // If I initiated the rematch I've already navigated; this effect handles the other player.
+    // We redirect unconditionally — if the local player was the one who created the rematch,
+    // they already navigated away so this effect won't fire on a live page.
+    router.push(`/m/${match.rematch_code}`);
+  }, [match?.rematch_code, playerNum, router]);
+
   // ── Derived state ──
   const myState = playerStates.find((s) => s.player_num === playerNum);
   const oppNum = playerNum === 1 ? 2 : 1;
@@ -429,7 +442,7 @@ export default function GameClient({ code }: { code: string }) {
   if (match?.mode === "H2H_TURN" && match.seed) {
     mines = generateMinesFromSeed(match.seed);
     adjacentCounts = computeAdjacentCounts(mines);
-  } else if (match?.mode === "ASYM_PLANT_CLEAR" && match.status === "PLAYING") {
+  } else if (match?.mode === "ASYM_PLANT_CLEAR" && (match.status === "PLAYING" || match.status === "FINISHED")) {
     // For clearing: I'm clearing opponent's mines
     if (oppState?.mines) {
       mines = oppState.mines as boolean[];
@@ -544,6 +557,31 @@ export default function GameClient({ code }: { code: string }) {
     }
   }, [code, playerNum]);
 
+  const handleRematch = useCallback(async () => {
+    if (!playerNum) return;
+    setRematchPending(true);
+    try {
+      const res = await fetch(`/api/matches/${code}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rematch", playerNum }),
+      });
+      const data = await res.json();
+      if (res.ok && data.rematchCode) {
+        router.push(`/m/${data.rematchCode}`);
+      }
+    } finally {
+      setRematchPending(false);
+    }
+  }, [code, playerNum, router]);
+
+  const handleCopyLink = useCallback(() => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, []);
+
   // ── Render ──
   if (loading) {
     return (
@@ -573,12 +611,17 @@ export default function GameClient({ code }: { code: string }) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-6 p-6">
         <h1 className="text-2xl font-bold">Waiting for opponent…</h1>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl px-8 py-6 text-center space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl px-8 py-6 text-center space-y-3">
           <p className="text-sm text-zinc-400">Share this match code:</p>
           <p className="text-3xl font-mono font-bold tracking-widest text-indigo-400">
             {match.code}
           </p>
-          <p className="text-xs text-zinc-500">or share the URL</p>
+          <button
+            onClick={handleCopyLink}
+            className="w-full py-2 px-4 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-sm font-semibold transition-colors"
+          >
+            {copied ? "✅ Copied!" : "🔗 Copy Link"}
+          </button>
         </div>
         <p className="text-sm text-zinc-500">
           Mode:{" "}
@@ -667,6 +710,25 @@ export default function GameClient({ code }: { code: string }) {
             }`}
           >
             {resultMsg}
+          </div>
+        )}
+
+        {/* Post-game actions */}
+        {gameOver && (
+          <div className="flex gap-3 mb-6">
+            <button
+              onClick={handleRematch}
+              disabled={rematchPending || !!match.rematch_code}
+              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-semibold transition-colors"
+            >
+              {rematchPending ? "Creating…" : match.rematch_code ? "⏳ Rematch created…" : "🔁 Play Again"}
+            </button>
+            <Link
+              href="/"
+              className="px-5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-semibold transition-colors"
+            >
+              🏠 Home
+            </Link>
           </div>
         )}
 

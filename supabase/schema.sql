@@ -19,6 +19,7 @@ create table if not exists public.matches (
   planting_deadline   timestamptz,                    -- ASYM planting phase end
   clearing_started_at timestamptz,
   winner              int,                            -- 1, 2, or 0 for draw; null = unresolved
+  rematch_code        text,                           -- code of the follow-up rematch, set when a player clicks Play Again
   created_at          timestamptz not null default now()
 );
 
@@ -44,6 +45,7 @@ create table if not exists public.player_states (
 -- Idempotent column additions for databases created before these columns were added.
 -- Safe to re-run: ADD COLUMN IF NOT EXISTS is a no-op when the column already exists.
 alter table public.player_states add column if not exists ready boolean not null default false;
+alter table public.matches add column if not exists rematch_code text;
 
 -- ──────────── Indexes ────────────
 create index if not exists idx_matches_code on public.matches (code);

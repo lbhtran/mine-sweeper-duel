@@ -8,7 +8,8 @@ import {
   isCleared,
 } from "@/lib/game/board";
 import { evaluateH2HTurnRound, evaluateAsymResult } from "@/lib/game/rules";
-import { CELL_COUNT, FLAG_CAP, MINE_COUNT, type PlayerState } from "@/lib/game/types";
+import { CELL_COUNT, FLAG_CAP, MINE_COUNT, type GameMode, type PlayerState } from "@/lib/game/types";
+import { generateMatchCode } from "@/lib/game/board";
 
 type Params = { params: Promise<{ code: string }> };
 
@@ -144,20 +145,20 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const { action, playerNum, cellIndex } = body as {
-    action: "reveal" | "flag" | "plant" | "ready";
+    action: "reveal" | "flag" | "plant" | "ready" | "rematch";
     playerNum: 1 | 2;
     cellIndex: number;
   };
 
   if (
-    !["reveal", "flag", "plant", "ready"].includes(action) ||
+    !["reveal", "flag", "plant", "ready", "rematch"].includes(action) ||
     ![1, 2].includes(playerNum)
   ) {
     return NextResponse.json({ error: "Invalid action params" }, { status: 400 });
   }
 
   // Cell-based actions require a valid cellIndex
-  if (action !== "ready") {
+  if (action !== "ready" && action !== "rematch") {
     if (
       typeof cellIndex !== "number" ||
       cellIndex < 0 ||
@@ -180,7 +181,9 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   if (match.status === "WAITING" || match.status === "FINISHED") {
-    return NextResponse.json({ error: "Action not allowed in current status" }, { status: 409 });
+    if (action !== "rematch") {
+      return NextResponse.json({ error: "Action not allowed in current status" }, { status: 409 });
+    }
   }
 
   const { data: states } = await supabase
@@ -192,6 +195,94 @@ export async function PATCH(request: Request, { params }: Params) {
   const myState = states?.find((s) => s.player_num === playerNum);
   if (!myState) {
     return NextResponse.json({ error: "Player state not found" }, { status: 404 });
+  }
+
+  // ──────── REMATCH ────────
+  if (action === "rematch") {
+    if (match.status !== "FINISHED") {
+      return NextResponse.json(
+        { error: "Match is not finished" },
+        { status: 409 }
+      );
+    }
+
+    // If a rematch was already created, return the existing code
+    if (match.rematch_code) {
+      return NextResponse.json({ rematchCode: match.rematch_code });
+    }
+
+    // Generate a unique code for the new match
+    let newCode = generateMatchCode();
+    let attempts = 0;
+    while (attempts < 10) {
+      const { data: existing } = await supabase
+        .from("matches")
+        .select("code")
+        .eq("code", newCode)
+        .maybeSingle();
+      if (!existing) break;
+      newCode = generateMatchCode();
+      attempts++;
+    }
+
+    // Determine the player_id of the initiating player
+    const initiatorPlayerId =
+      playerNum === 1 ? match.player1_id : match.player2_id;
+
+    const newSeed =
+      match.mode === "H2H_TURN" ? Math.floor(Math.random() * 2 ** 31) : null;
+
+    const { data: newMatch, error: newMatchError } = await supabase
+      .from("matches")
+      .insert({
+        code: newCode,
+        mode: match.mode as GameMode,
+        status: "WAITING",
+        seed: newSeed,
+        player1_id: initiatorPlayerId,
+        player2_id: null,
+        current_turn: 1,
+        round: 0,
+        planting_deadline: null,
+        clearing_started_at: null,
+        winner: null,
+        rematch_code: null,
+      })
+      .select()
+      .single();
+
+    if (newMatchError || !newMatch) {
+      return NextResponse.json(
+        { error: newMatchError?.message ?? "Failed to create rematch" },
+        { status: 500 }
+      );
+    }
+
+    // Create player state for the initiator in the new match
+    await supabase.from("player_states").insert({
+      match_id: newMatch.id,
+      player_num: 1,
+      player_id: initiatorPlayerId,
+      revealed: new Array(CELL_COUNT).fill(false),
+      flagged: new Array(CELL_COUNT).fill(false),
+      reveal_count: 0,
+      exploded: false,
+      cleared: false,
+      cleared_at: null,
+      exploded_at: null,
+      mines:
+        match.mode === "ASYM_PLANT_CLEAR"
+          ? new Array(CELL_COUNT).fill(false)
+          : null,
+    });
+
+    // Store the rematch code on the old match so the other player gets notified via realtime
+    await supabase
+      .from("matches")
+      .update({ rematch_code: newCode })
+      .eq("id", match.id);
+
+    return NextResponse.json({ rematchCode: newCode });
   }
 
   // ──────── PLANT (ASYM planting phase) ────────
